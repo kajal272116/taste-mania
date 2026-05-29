@@ -29,8 +29,10 @@ const dietTabs = [
 const G = { cream:"#fdf8f0", dark:"#1a1a1a", green:"#2d6a4f", red:"#9b2226", warm:"#c9882b", muted:"#666", border:"#e8e0d5" };
 const play = { fontFamily:"'Playfair Display',Georgia,serif" };
 
-const API_URL = typeof window !== "undefined" && window.location.hostname.includes("netlify")
-  ? "/.netlify/functions/claude"
+const API_URL = typeof window !== "undefined" && 
+  !window.location.hostname.includes("localhost") && 
+  !window.location.hostname.includes("anthropic")
+  ? "/api/claude"
   : "https://api.anthropic.com/v1/messages";
 
 const callAI = async (system, userMsg, max_tokens=1500) => {
