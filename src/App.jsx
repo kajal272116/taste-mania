@@ -20,9 +20,13 @@ const TRENDING = [
 const HERO    = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1400&q=80";
 const FALLBACK= "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80";
 
-// Dynamic food image by dish name via Unsplash Source
-const foodImg = (name, w=600, h=400) =>
-  `https://source.unsplash.com/${w}x${h}/?${encodeURIComponent(name.split(" ").slice(0,3).join(" ") + " food dish")}`;
+// Unique image per dish — seed derived from dish name so each gets a different photo
+const strHash = (s) => s.split("").reduce((a,c) => (a * 31 + c.charCodeAt(0)) & 0xffff, 7);
+const foodImg = (name, w=600, h=400) => {
+  const keyword = encodeURIComponent(name + " food recipe dish");
+  const seed    = strHash(name);
+  return `https://source.unsplash.com/${w}x${h}/?${keyword}&sig=${seed}`;
+};
 
 const dietTabs = [
   { key:"Veg",     label:"Vegetarian",     icon:"🥦", color:"#2d6a4f" },
@@ -206,21 +210,23 @@ Always respond in JSON only, no markdown.`,
         *{box-sizing:border-box;margin:0;padding:0}
         .lift:hover{transform:translateY(-6px);box-shadow:0 20px 48px rgba(0,0,0,0.15)!important}
         .pop:hover{transform:scale(1.04);box-shadow:0 12px 32px rgba(0,0,0,0.18)!important}
-        .chat-bubble{animation:popIn .2s ease}
+        @keyframes pulse{0%,100%{box-shadow:0 6px 24px rgba(45,106,79,0.45),0 0 0 0 rgba(45,106,79,0.4)}70%{box-shadow:0 6px 24px rgba(45,106,79,0.45),0 0 0 10px rgba(45,106,79,0)}}
         @keyframes popIn{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
         .sugg-item:hover{background:#f5f0e8}
       `}</style>
 
       {/* ── NAV ── */}
-      <nav style={{ background:"#fff", borderBottom:`3px solid ${G.green}`, padding:"0 2rem", display:"flex", alignItems:"center", height:68, position:"sticky", top:0, zIndex:200, boxShadow:"0 2px 12px rgba(0,0,0,0.06)" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }} onClick={()=>{ setStep("home"); setCuisine(null); }}>
-          <span style={{ fontSize:32 }}>🍽️</span>
+      <nav style={{ background:"#fff", borderBottom:`3px solid ${G.green}`, padding:"0 2rem", display:"flex", alignItems:"center", height:72, position:"sticky", top:0, zIndex:200, boxShadow:"0 2px 16px rgba(0,0,0,0.08)" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:14, cursor:"pointer" }} onClick={()=>{ setStep("home"); setCuisine(null); }}>
+          <div style={{ background:`linear-gradient(135deg,${G.green},#1a4731)`, borderRadius:12, width:46, height:46, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 3px 10px rgba(45,106,79,0.35)` }}>
+            <span style={{ fontSize:26 }}>🍽️</span>
+          </div>
           <div>
-            <div style={{ display:"flex", alignItems:"baseline", gap:0 }}>
-              <span style={{ ...play, fontSize:28, fontWeight:900, color:G.green, letterSpacing:"-0.5px" }}>Taste</span>
-              <span style={{ ...play, fontSize:28, fontWeight:900, color:G.red,   letterSpacing:"-0.5px" }}>Mania</span>
+            <div style={{ display:"flex", alignItems:"baseline", gap:1 }}>
+              <span style={{ ...play, fontSize:30, fontWeight:900, color:G.green, letterSpacing:"-1px" }}>Taste</span>
+              <span style={{ ...play, fontSize:30, fontWeight:900, color:G.red,   letterSpacing:"-1px" }}>Mania</span>
             </div>
-            <div style={{ fontSize:9, fontWeight:700, letterSpacing:3, textTransform:"uppercase", color:G.warm, marginTop:-3 }}>World Kitchen</div>
+            <div style={{ fontSize:9, fontWeight:800, letterSpacing:4, textTransform:"uppercase", color:G.warm, marginTop:-4, paddingLeft:2 }}>World Kitchen</div>
           </div>
         </div>
       </nav>
@@ -376,7 +382,7 @@ Always respond in JSON only, no markdown.`,
           {loading ? (
             <div style={{ textAlign:"center", padding:"5rem 0" }}>
               <div style={{ fontSize:64, marginBottom:16 }}>👨‍🍳</div>
-              <p style={{ ...play, color:G.muted, fontSize:24 }}>Fetching {diet} {cuisine} recipes…</p>
+              <p style={{ ...play, color:G.muted, fontSize:24 }}>Bringing you the best {diet} {cuisine} recipes…</p>
             </div>
           ) : (
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(290px,1fr))", gap:24 }}>
@@ -493,8 +499,8 @@ Always respond in JSON only, no markdown.`,
       {/* ══ CHATBOT ══ */}
       {/* Floating button */}
       <button onClick={()=>setChatOpen(o=>!o)}
-        style={{ position:"fixed", bottom:28, right:28, width:60, height:60, borderRadius:"50%", background:G.green, color:"#fff", fontSize:26, border:"none", cursor:"pointer", boxShadow:"0 6px 24px rgba(45,106,79,0.45)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", transition:"transform .2s" }}
-        onMouseEnter={e=>e.currentTarget.style.transform="scale(1.1)"}
+        style={{ position:"fixed", bottom:28, right:28, width:64, height:64, borderRadius:"50%", background:`linear-gradient(135deg,${G.green},#1a4731)`, color:"#fff", fontSize:28, border:"3px solid #fff", cursor:"pointer", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", transition:"transform .2s", animation:chatOpen?"none":"pulse 2s infinite" }}
+        onMouseEnter={e=>e.currentTarget.style.transform="scale(1.12)"}
         onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
         {chatOpen ? "✕" : "💬"}
       </button>
