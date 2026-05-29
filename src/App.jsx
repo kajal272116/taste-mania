@@ -17,16 +17,8 @@ const TRENDING = [
   { name:"Pad Thai",            cuisine:"Thai",    time:"30 mins", img:"https://images.unsplash.com/photo-1559314809-0d155014e29e?w=600&q=80" },
 ];
 
-const HERO    = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1400&q=80";
-const FALLBACK= "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80";
-
-// Unique image per dish — seed derived from dish name so each gets a different photo
-const strHash = (s) => s.split("").reduce((a,c) => (a * 31 + c.charCodeAt(0)) & 0xffff, 7);
-const foodImg = (name, w=600, h=400) => {
-  const keyword = encodeURIComponent(name + " food recipe dish");
-  const seed    = strHash(name);
-  return `https://source.unsplash.com/${w}x${h}/?${keyword}&sig=${seed}`;
-};
+const HERO     = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1400&q=80";
+const FALLBACK = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80";
 
 const dietTabs = [
   { key:"Veg",     label:"Vegetarian",     icon:"🥦", color:"#2d6a4f" },
@@ -59,8 +51,43 @@ const extractJSON = (text) => {
   if (arr) { try { return JSON.parse(arr[0]); } catch {} }
   const obj = text.match(/\{[\s\S]*\}/);
   if (obj) { try { return JSON.parse(obj[0]); } catch {} }
-  throw new Error("Could not parse JSON from: " + text.slice(0,100));
+  throw new Error("Could not parse JSON");
 };
+
+// ── MealImage: fetches the exact dish photo from TheMealDB ──
+function MealImage({ name, fallback, style, overlay }) {
+  const [src, setSrc] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setSrc(null); setLoaded(false);
+    const query = encodeURIComponent(name.trim());
+    fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${query}`)
+      .then(r => r.json())
+      .then(data => {
+        const thumb = data?.meals?.[0]?.strMealThumb;
+        setSrc(thumb ? thumb + "/preview" : fallback);
+      })
+      .catch(() => setSrc(fallback));
+  }, [name]);
+
+  return (
+    <div style={{ position:"relative", width:"100%", height:"100%", background:"#f0ede8" }}>
+      {/* Skeleton shimmer while loading */}
+      {!loaded && (
+        <div style={{ position:"absolute", inset:0, background:"linear-gradient(90deg,#f0ede8 25%,#e8e4de 50%,#f0ede8 75%)", backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite" }} />
+      )}
+      <img
+        src={src || fallback}
+        alt={name}
+        style={{ ...style, opacity: loaded ? 1 : 0, transition:"opacity 0.4s" }}
+        onLoad={() => setLoaded(true)}
+        onError={e => { e.target.onerror=null; e.target.src=fallback; setLoaded(true); }}
+      />
+      {overlay && <div style={{ position:"absolute", inset:0, ...overlay }} />}
+    </div>
+  );
+}
 
 export default function TasteMania() {
   const [step,       setStep]    = useState("home");
@@ -77,7 +104,7 @@ export default function TasteMania() {
   const [suggLoading,setSL]      = useState(false);
   const [chatOpen,   setChatOpen]= useState(false);
   const [chatMsgs,   setChatMsgs]= useState([
-    { role:"bot", text:"👋 Hi! I'm your TasteMania assistant. Ask me about any recipe or food fact, and I can even take you to a recipe page!" }
+    { role:"bot", text:"👋 Hi! I'm your TasteMania assistant. Ask me about any recipe or food fact!" }
   ]);
   const [chatInput,  setChatInput]= useState("");
   const [chatLoading,setCL]      = useState(false);
@@ -91,7 +118,6 @@ export default function TasteMania() {
     chatEndRef.current?.scrollIntoView({ behavior:"smooth" });
   }, [chatMsgs]);
 
-  // ── Fetch full recipe list ──
   const fetchRecipes = async (c, d) => {
     setLoading(true); setRecipes([]); setError(""); setSearch(""); setSugg([]);
     try {
@@ -112,7 +138,6 @@ export default function TasteMania() {
     setLoading(false);
   };
 
-  // ── Search suggestions ──
   const handleSearchInput = (val) => {
     setSearch(val);
     clearTimeout(searchTimer.current);
@@ -122,8 +147,7 @@ export default function TasteMania() {
       try {
         const text = await callAI(
           "Return ONLY a JSON array of strings. No markdown.",
-          `List 6 ${cuisine} dish names that match the keyword "${val}". Just names, JSON array.`,
-          400
+          `List 6 ${cuisine} dish names matching keyword "${val}". JSON array only.`, 400
         );
         setSugg(extractJSON(text));
       } catch { setSugg([]); }
@@ -137,20 +161,19 @@ export default function TasteMania() {
     try {
       const text = await callAI(
         "Return ONLY a valid JSON array with ONE item. No markdown. Format: [{name, description, time, difficulty, tags:[str,str]}]",
-        `Give me the recipe card details for "${name}" (${cuisine}, ${diet}). JSON array with one item only.`
+        `Recipe card for "${name}" (${cuisine}, ${diet}). JSON array, one item.`
       );
       setRecipes(extractJSON(text));
     } catch(e) { setError("⚠️ " + e.message); }
     setLoading(false);
   };
 
-  // ── Recipe detail ──
   const fetchDetail = async (r) => {
     setDL(true); setDetail(null);
     try {
       const text = await callAI(
         "Return ONLY valid JSON. No markdown. Format: {ingredients:[str], steps:[str], tip:str}",
-        `Full recipe for "${r.name}" (${cuisine || "any"}, ${diet || "any"}). JSON only.`
+        `Full recipe for "${r.name}" (${cuisine||"any"}, ${diet||"any"}). JSON only.`
       );
       setDetail(extractJSON(text));
     } catch(e) {
@@ -159,7 +182,6 @@ export default function TasteMania() {
     setDL(false);
   };
 
-  // ── Chatbot ──
   const sendChat = async () => {
     const msg = chatInput.trim();
     if (!msg) return;
@@ -168,21 +190,16 @@ export default function TasteMania() {
     setCL(true);
     try {
       const text = await callAI(
-        `You are TasteMania's friendly food assistant. 
-If the user asks for a specific recipe, respond with JSON: {"type":"recipe","name":"<dish name>","message":"<short intro>"}
-If they ask a food fact or general question, respond with JSON: {"type":"fact","message":"<your answer>"}
-Always respond in JSON only, no markdown.`,
+        `You are TasteMania's food assistant. If user asks for a recipe, respond: {"type":"recipe","name":"<dish>","message":"<intro>"}. Otherwise: {"type":"fact","message":"<answer>"}. JSON only.`,
         msg, 600
       );
       const parsed = extractJSON(text);
       if (parsed.type === "recipe") {
-        setChatMsgs(p => [...p, {
-          role:"bot",
-          text: parsed.message,
-          action: { label:`View ${parsed.name} Recipe →`, recipe:{ name:parsed.name, description:"", time:"", difficulty:"", tags:[] } }
+        setChatMsgs(p => [...p, { role:"bot", text:parsed.message,
+          action:{ label:`View ${parsed.name} Recipe →`, recipe:{ name:parsed.name, description:"", time:"", difficulty:"", tags:[] } }
         }]);
       } else {
-        setChatMsgs(p => [...p, { role:"bot", text: parsed.message }]);
+        setChatMsgs(p => [...p, { role:"bot", text:parsed.message }]);
       }
     } catch {
       setChatMsgs(p => [...p, { role:"bot", text:"Sorry, I couldn't process that. Please try again!" }]);
@@ -190,43 +207,41 @@ Always respond in JSON only, no markdown.`,
     setCL(false);
   };
 
-  const openChatRecipe = (r) => {
-    setRecipe(r); setStep("detail");
-    setCuisine(r.cuisine || null); setDiet("Veg");
-    fetchDetail(r);
-    setChatOpen(false);
-  };
-
-  const goTo = (c)  => { setCuisine(c.name); setDiet("Veg"); setStep("diet"); fetchRecipes(c.name,"Veg"); };
-  const changeDiet=(d)=>{ setDiet(d); fetchRecipes(cuisine,d); };
-  const openRecipe=(r)=>{ setRecipe(r); setStep("detail"); fetchDetail(r); };
+  const openChatRecipe = (r) => { setRecipe(r); setStep("detail"); setCuisine(r.cuisine||null); setDiet("Veg"); fetchDetail(r); setChatOpen(false); };
+  const goTo       = (c) => { setCuisine(c.name); setDiet("Veg"); setStep("diet"); fetchRecipes(c.name,"Veg"); };
+  const changeDiet = (d) => { setDiet(d); fetchRecipes(cuisine,d); };
+  const openRecipe = (r) => { setRecipe(r); setStep("detail"); fetchDetail(r); };
   const activeDiet = dietTabs.find(d=>d.key===diet);
   const cuisineObj  = cuisines.find(c=>c.name===cuisine);
 
   return (
     <div style={{ background:G.cream, minHeight:"100vh", fontFamily:"'Segoe UI',system-ui,sans-serif" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,800;0,900;1,700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
         .lift:hover{transform:translateY(-6px);box-shadow:0 20px 48px rgba(0,0,0,0.15)!important}
         .pop:hover{transform:scale(1.04);box-shadow:0 12px 32px rgba(0,0,0,0.18)!important}
-        @keyframes pulse{0%,100%{box-shadow:0 6px 24px rgba(45,106,79,0.45),0 0 0 0 rgba(45,106,79,0.4)}70%{box-shadow:0 6px 24px rgba(45,106,79,0.45),0 0 0 10px rgba(45,106,79,0)}}
-        @keyframes popIn{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
         .sugg-item:hover{background:#f5f0e8}
+        .chat-bubble{animation:popIn .2s ease}
+        @keyframes popIn{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
+        @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+        @keyframes pulse{0%,100%{box-shadow:0 6px 24px rgba(45,106,79,0.5),0 0 0 0 rgba(45,106,79,0.4)}70%{box-shadow:0 6px 24px rgba(45,106,79,0.5),0 0 0 12px rgba(45,106,79,0)}}
       `}</style>
 
       {/* ── NAV ── */}
-      <nav style={{ background:"#fff", borderBottom:`3px solid ${G.green}`, padding:"0 2rem", display:"flex", alignItems:"center", height:72, position:"sticky", top:0, zIndex:200, boxShadow:"0 2px 16px rgba(0,0,0,0.08)" }}>
+      <nav style={{ background:"#fff", borderBottom:`3px solid ${G.green}`, padding:"0 2rem", display:"flex", alignItems:"center", height:72, position:"sticky", top:0, zIndex:200, boxShadow:"0 2px 16px rgba(0,0,0,0.07)" }}>
         <div style={{ display:"flex", alignItems:"center", gap:14, cursor:"pointer" }} onClick={()=>{ setStep("home"); setCuisine(null); }}>
-          <div style={{ background:`linear-gradient(135deg,${G.green},#1a4731)`, borderRadius:12, width:46, height:46, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 3px 10px rgba(45,106,79,0.35)` }}>
-            <span style={{ fontSize:26 }}>🍽️</span>
+          {/* Icon badge */}
+          <div style={{ background:`linear-gradient(135deg,${G.green},#1a4731)`, borderRadius:13, width:50, height:50, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 4px 14px rgba(45,106,79,0.40)`, flexShrink:0 }}>
+            <span style={{ fontSize:28 }}>🍽️</span>
           </div>
-          <div>
-            <div style={{ display:"flex", alignItems:"baseline", gap:1 }}>
-              <span style={{ ...play, fontSize:30, fontWeight:900, color:G.green, letterSpacing:"-1px" }}>Taste</span>
-              <span style={{ ...play, fontSize:30, fontWeight:900, color:G.red,   letterSpacing:"-1px" }}>Mania</span>
+          {/* Brand name */}
+          <div style={{ borderLeft:`3px solid ${G.warm}`, paddingLeft:14 }}>
+            <div style={{ display:"flex", alignItems:"baseline", gap:0, lineHeight:1 }}>
+              <span style={{ ...play, fontSize:34, fontWeight:900, color:G.green, letterSpacing:"-2px" }}>Taste</span>
+              <span style={{ ...play, fontSize:34, fontWeight:900, color:G.red,   letterSpacing:"-2px" }}>Mania</span>
             </div>
-            <div style={{ fontSize:9, fontWeight:800, letterSpacing:4, textTransform:"uppercase", color:G.warm, marginTop:-4, paddingLeft:2 }}>World Kitchen</div>
+            <div style={{ fontSize:9, fontWeight:800, letterSpacing:4.5, textTransform:"uppercase", color:G.warm, marginTop:2 }}>World Kitchen</div>
           </div>
         </div>
       </nav>
@@ -243,7 +258,7 @@ Always respond in JSON only, no markdown.`,
               Which cuisine would you like to try today?
             </h1>
             <p style={{ color:"rgba(255,255,255,0.80)", fontSize:18, lineHeight:1.7, marginBottom:32 }}>Fresh, flavorful recipes from around the world.</p>
-            <button onClick={scrollToCuisines} style={{ background:G.green, color:"#fff", padding:"15px 36px", border:"none", borderRadius:6, fontWeight:700, fontSize:16, cursor:"pointer", boxShadow:"0 4px 16px rgba(45,106,79,0.4)" }}>
+            <button onClick={scrollToCuisines} style={{ background:G.green, color:"#fff", padding:"15px 36px", border:"none", borderRadius:6, fontWeight:700, fontSize:16, cursor:"pointer", boxShadow:`0 4px 16px rgba(45,106,79,0.4)` }}>
               Browse Cuisines ↓
             </button>
           </div>
@@ -308,10 +323,11 @@ Always respond in JSON only, no markdown.`,
         </div>
 
         <footer style={{ background:G.dark, color:"#aaa", textAlign:"center", padding:"2.5rem", fontSize:13 }}>
-            <div style={{ display:"inline-flex", alignItems:"baseline", background:"linear-gradient(135deg,#f0faf4,#fdf8f0)", border:`2px solid ${G.green}20`, borderRadius:12, padding:"6px 18px 6px 12px", gap:2, boxShadow:"0 2px 12px rgba(45,106,79,0.10)" }}>
-              <span style={{ ...play, fontSize:42, fontWeight:900, color:G.green, letterSpacing:"-1px" }}>Taste</span>
-              <span style={{ ...play, fontSize:42, fontWeight:900, color:G.red,   letterSpacing:"-1px" }}>Mania</span>
-            </div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:8 }}>
+            <span style={{ fontSize:22 }}>🍽️</span>
+            <span style={{ ...play, color:G.green, fontSize:24, fontWeight:900 }}>Taste</span>
+            <span style={{ ...play, color:G.red,   fontSize:24, fontWeight:900 }}>Mania</span>
+          </div>
           <p style={{ opacity:.5 }}>© 2025 TasteMania · Recipes from around the world · Powered by AI</p>
         </footer>
       </>}
@@ -319,13 +335,11 @@ Always respond in JSON only, no markdown.`,
       {/* ══ DIET + RECIPES ══ */}
       {step==="diet" && (
         <div style={{ maxWidth:1060, margin:"0 auto", padding:"2.5rem 1.5rem" }}>
-          {/* breadcrumb */}
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:28, fontSize:13, color:G.muted }}>
             <span style={{ cursor:"pointer", color:G.green, fontWeight:600 }} onClick={()=>{ setStep("home"); setCuisine(null); }}>Home</span>
             <span>›</span><span style={{ color:G.dark, fontWeight:600 }}>{cuisine} Recipes</span>
           </div>
 
-          {/* cuisine banner */}
           {cuisineObj && (
             <div style={{ borderRadius:14, marginBottom:32, overflow:"hidden", position:"relative", height:180 }}>
               <img src={cuisineObj.img} alt={cuisine} style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={e=>e.target.src=FALLBACK} />
@@ -340,7 +354,6 @@ Always respond in JSON only, no markdown.`,
             </div>
           )}
 
-          {/* diet tabs */}
           <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:24 }}>
             {dietTabs.map(d=>{
               const active=diet===d.key;
@@ -351,20 +364,16 @@ Always respond in JSON only, no markdown.`,
             })}
           </div>
 
-          {/* ── SEARCH BAR ── */}
+          {/* SEARCH */}
           <div style={{ position:"relative", marginBottom:32 }}>
             <div style={{ display:"flex", alignItems:"center", background:"#fff", border:`2px solid ${G.border}`, borderRadius:10, padding:"12px 18px", boxShadow:"0 2px 12px rgba(0,0,0,0.06)", gap:12 }}>
               <span style={{ fontSize:20 }}>🔍</span>
-              <input
-                value={search}
-                onChange={e=>handleSearchInput(e.target.value)}
+              <input value={search} onChange={e=>handleSearchInput(e.target.value)}
                 placeholder="Enter the food item you're craving for…"
-                style={{ flex:1, border:"none", outline:"none", fontSize:15, color:G.dark, background:"transparent" }}
-              />
+                style={{ flex:1, border:"none", outline:"none", fontSize:15, color:G.dark, background:"transparent" }} />
               {suggLoading && <span style={{ fontSize:13, color:G.muted }}>Searching…</span>}
               {search && <span style={{ cursor:"pointer", color:G.muted, fontSize:18 }} onClick={()=>{ setSearch(""); setSugg([]); fetchRecipes(cuisine,diet); }}>✕</span>}
             </div>
-            {/* suggestions dropdown */}
             {suggestions.length > 0 && (
               <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#fff", border:`1px solid ${G.border}`, borderRadius:10, boxShadow:"0 8px 24px rgba(0,0,0,0.12)", zIndex:100, marginTop:4, overflow:"hidden" }}>
                 {suggestions.map((s,i)=>(
@@ -389,13 +398,13 @@ Always respond in JSON only, no markdown.`,
               {recipes.map((r,i)=>(
                 <div key={i} className="lift" onClick={()=>openRecipe(r)}
                   style={{ background:"#fff", borderRadius:14, overflow:"hidden", cursor:"pointer", transition:"all .2s", boxShadow:"0 3px 14px rgba(0,0,0,0.08)" }}>
-                  <div style={{ position:"relative", height:200 }}>
-                    {/* Dynamic image matched to recipe name */}
-                    <img
-                      src={foodImg(r.name)}
-                      alt={r.name}
+                  {/* ✅ TheMealDB: exact dish photo matched by name */}
+                  <div style={{ height:200, overflow:"hidden" }}>
+                    <MealImage
+                      name={r.name}
+                      fallback={cuisineObj?.img || FALLBACK}
                       style={{ width:"100%", height:"100%", objectFit:"cover" }}
-                      onError={e=>{ e.target.onerror=null; e.target.src=cuisineObj?.img||FALLBACK; }}
+                      overlay={null}
                     />
                     <div style={{ position:"absolute", top:12, left:12, background:activeDiet.color, color:"#fff", fontSize:11, fontWeight:700, padding:"4px 10px", borderRadius:4, textTransform:"uppercase" }}>
                       {activeDiet.icon} {diet}
@@ -429,15 +438,14 @@ Always respond in JSON only, no markdown.`,
             <span>›</span><span style={{ color:G.dark }}>{recipe.name}</span>
           </div>
           <div style={{ background:"#fff", borderRadius:16, overflow:"hidden", boxShadow:"0 4px 24px rgba(0,0,0,0.09)" }}>
-            {/* Recipe-specific hero image */}
-            <div style={{ position:"relative", height:320 }}>
-              <img
-                src={foodImg(recipe.name, 800, 320)}
-                alt={recipe.name}
+            {/* ✅ TheMealDB: exact dish photo for detail page too */}
+            <div style={{ position:"relative", height:320, overflow:"hidden" }}>
+              <MealImage
+                name={recipe.name}
+                fallback={cuisineObj?.img || FALLBACK}
                 style={{ width:"100%", height:"100%", objectFit:"cover" }}
-                onError={e=>{ e.target.onerror=null; e.target.src=cuisineObj?.img||FALLBACK; }}
               />
-              <div style={{ position:"absolute", inset:0, background:"linear-gradient(to top,rgba(0,0,0,0.55),transparent)" }} />
+              <div style={{ position:"absolute", inset:0, background:"linear-gradient(to top,rgba(0,0,0,0.60),transparent)" }} />
               <h1 style={{ ...play, position:"absolute", bottom:24, left:28, color:"#fff", fontSize:36, fontWeight:900, textShadow:"0 2px 12px rgba(0,0,0,0.5)" }}>{recipe.name}</h1>
             </div>
             <div style={{ padding:"2rem 2.5rem" }}>
@@ -497,18 +505,15 @@ Always respond in JSON only, no markdown.`,
       )}
 
       {/* ══ CHATBOT ══ */}
-      {/* Floating button */}
       <button onClick={()=>setChatOpen(o=>!o)}
         style={{ position:"fixed", bottom:28, right:28, width:64, height:64, borderRadius:"50%", background:`linear-gradient(135deg,${G.green},#1a4731)`, color:"#fff", fontSize:28, border:"3px solid #fff", cursor:"pointer", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", transition:"transform .2s", animation:chatOpen?"none":"pulse 2s infinite" }}
         onMouseEnter={e=>e.currentTarget.style.transform="scale(1.12)"}
         onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-        {chatOpen ? "✕" : "💬"}
+        {chatOpen?"✕":"💬"}
       </button>
 
-      {/* Chat panel */}
       {chatOpen && (
-        <div style={{ position:"fixed", bottom:100, right:28, width:340, maxHeight:480, background:"#fff", borderRadius:16, boxShadow:"0 12px 48px rgba(0,0,0,0.18)", zIndex:299, display:"flex", flexDirection:"column", overflow:"hidden", border:`1px solid ${G.border}` }}>
-          {/* header */}
+        <div style={{ position:"fixed", bottom:104, right:28, width:340, maxHeight:480, background:"#fff", borderRadius:16, boxShadow:"0 12px 48px rgba(0,0,0,0.18)", zIndex:299, display:"flex", flexDirection:"column", overflow:"hidden", border:`1px solid ${G.border}` }}>
           <div style={{ background:G.green, padding:"14px 18px", display:"flex", alignItems:"center", gap:10 }}>
             <span style={{ fontSize:22 }}>🍽️</span>
             <div>
@@ -516,7 +521,6 @@ Always respond in JSON only, no markdown.`,
               <div style={{ color:"rgba(255,255,255,0.75)", fontSize:12 }}>Ask me anything about food!</div>
             </div>
           </div>
-          {/* messages */}
           <div style={{ flex:1, overflowY:"auto", padding:"14px 14px 8px", display:"flex", flexDirection:"column", gap:10 }}>
             {chatMsgs.map((m,i)=>(
               <div key={i} className="chat-bubble" style={{ display:"flex", flexDirection:"column", alignItems:m.role==="user"?"flex-end":"flex-start" }}>
@@ -531,26 +535,15 @@ Always respond in JSON only, no markdown.`,
                 )}
               </div>
             ))}
-            {chatLoading && (
-              <div style={{ background:"#f4f4f4", padding:"10px 14px", borderRadius:"14px 14px 14px 4px", fontSize:14, color:G.muted, alignSelf:"flex-start" }}>
-                Thinking… 🤔
-              </div>
-            )}
+            {chatLoading && <div style={{ background:"#f4f4f4", padding:"10px 14px", borderRadius:"14px 14px 14px 4px", fontSize:14, color:G.muted, alignSelf:"flex-start" }}>Thinking… 🤔</div>}
             <div ref={chatEndRef} />
           </div>
-          {/* input */}
           <div style={{ padding:"10px 12px", borderTop:`1px solid ${G.border}`, display:"flex", gap:8 }}>
-            <input
-              value={chatInput}
-              onChange={e=>setChatInput(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&sendChat()}
+            <input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendChat()}
               placeholder="Ask about a recipe or food fact…"
-              style={{ flex:1, border:`1.5px solid ${G.border}`, borderRadius:8, padding:"9px 12px", fontSize:14, outline:"none", color:G.dark }}
-            />
+              style={{ flex:1, border:`1.5px solid ${G.border}`, borderRadius:8, padding:"9px 12px", fontSize:14, outline:"none", color:G.dark }} />
             <button onClick={sendChat} disabled={chatLoading}
-              style={{ background:G.green, color:"#fff", border:"none", borderRadius:8, padding:"9px 14px", fontWeight:700, cursor:"pointer", fontSize:14 }}>
-              ➤
-            </button>
+              style={{ background:G.green, color:"#fff", border:"none", borderRadius:8, padding:"9px 14px", fontWeight:700, cursor:"pointer", fontSize:14 }}>➤</button>
           </div>
         </div>
       )}
