@@ -92,19 +92,44 @@ export default function TasteMania() {
 
   const scrollToCuisines = () => cuisinesRef.current?.scrollIntoView({ behavior:"smooth" });
 
-  // Batch-fetch all dish images simultaneously using Promise.all
+  // Batch-fetch all dish images via Pexels API (server-side, key is secret)
   const fetchAllImages = async (recipeList, fallback) => {
-    const results = await Promise.all(
-      recipeList.map(r =>
-        fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(r.name)}`)
-          .then(res => res.json())
-          .then(data => ({ name: r.name, url: data?.meals?.[0]?.strMealThumb || fallback }))
-          .catch(() => ({ name: r.name, url: fallback }))
-      )
-    );
-    const imgMap = {};
-    results.forEach(r => { imgMap[r.name] = r.url; });
-    setRecipeImages(imgMap);
+    try {
+      const isLive = !host.includes("localhost") && !host.includes("claude") && !host.includes("anthropic");
+      if (!isLive) {
+        // In preview: use TheMealDB as fallback (no Pexels key available)
+        const results = await Promise.all(
+          recipeList.map(r =>
+            fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(r.name)}`)
+              .then(res => res.json())
+              .then(data => ({ name: r.name, url: data?.meals?.[0]?.strMealThumb || fallback }))
+              .catch(() => ({ name: r.name, url: fallback }))
+          )
+        );
+        const imgMap = {};
+        results.forEach(r => { imgMap[r.name] = r.url; });
+        setRecipeImages(imgMap);
+        return;
+      }
+      // On Vercel: use Pexels via secure server function
+      const res = await fetch("/api/pexels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dishes: recipeList.map(r => r.name) })
+      });
+      const imageMap = await res.json();
+      // Fill missing dishes with fallback
+      const finalMap = {};
+      recipeList.forEach(r => {
+        finalMap[r.name] = imageMap[r.name] || fallback;
+      });
+      setRecipeImages(finalMap);
+    } catch {
+      // If anything fails, use fallback for all
+      const imgMap = {};
+      recipeList.forEach(r => { imgMap[r.name] = fallback; });
+      setRecipeImages(imgMap);
+    }
   };
 
   useEffect(() => {
