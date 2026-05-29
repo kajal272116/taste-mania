@@ -54,40 +54,14 @@ const extractJSON = (text) => {
   throw new Error("Could not parse JSON");
 };
 
-// ── MealImage: fetches the exact dish photo from TheMealDB ──
-function MealImage({ name, fallback, style, overlay }) {
-  const [src, setSrc] = useState(null);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    setSrc(null); setLoaded(false);
-    const query = encodeURIComponent(name.trim());
-    fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${query}`)
-      .then(r => r.json())
-      .then(data => {
-        const thumb = data?.meals?.[0]?.strMealThumb;
-        setSrc(thumb ? thumb + "/preview" : fallback);
-      })
-      .catch(() => setSrc(fallback));
-  }, [name]);
-
-  return (
-    <div style={{ position:"relative", width:"100%", height:"100%", background:"#f0ede8" }}>
-      {/* Skeleton shimmer while loading */}
-      {!loaded && (
-        <div style={{ position:"absolute", inset:0, background:"linear-gradient(90deg,#f0ede8 25%,#e8e4de 50%,#f0ede8 75%)", backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite" }} />
-      )}
-      <img
-        src={src || fallback}
-        alt={name}
-        style={{ ...style, opacity: loaded ? 1 : 0, transition:"opacity 0.4s" }}
-        onLoad={() => setLoaded(true)}
-        onError={e => { e.target.onerror=null; e.target.src=fallback; setLoaded(true); }}
-      />
-      {overlay && <div style={{ position:"absolute", inset:0, ...overlay }} />}
-    </div>
-  );
-}
+// Fast Unsplash image using AI-provided specific keyword + name-based seed
+// The seed ensures the same dish always gets the same image (no flickering)
+const strHash = (s) => Math.abs(s.split("").reduce((a,c) => (a * 31 + c.charCodeAt(0)) | 0, 0));
+const foodImg = (keyword, fallback) => {
+  if (!keyword) return fallback;
+  const seed = strHash(keyword);
+  return `https://source.unsplash.com/600x400/?${encodeURIComponent(keyword)}&sig=${seed}`;
+};
 
 export default function TasteMania() {
   const [step,       setStep]    = useState("home");
@@ -398,13 +372,13 @@ export default function TasteMania() {
               {recipes.map((r,i)=>(
                 <div key={i} className="lift" onClick={()=>openRecipe(r)}
                   style={{ background:"#fff", borderRadius:14, overflow:"hidden", cursor:"pointer", transition:"all .2s", boxShadow:"0 3px 14px rgba(0,0,0,0.08)" }}>
-                  {/* ✅ TheMealDB: exact dish photo matched by name */}
-                  <div style={{ height:200, overflow:"hidden" }}>
-                    <MealImage
-                      name={r.name}
-                      fallback={cuisineObj?.img || FALLBACK}
+                  {/* ✅ Fast: AI-provided specific keyword → Unsplash CDN */}
+                  <div style={{ height:200, overflow:"hidden", position:"relative" }}>
+                    <img
+                      src={foodImg(r.imageKeyword, cuisineObj?.img || FALLBACK)}
+                      alt={r.name}
                       style={{ width:"100%", height:"100%", objectFit:"cover" }}
-                      overlay={null}
+                      onError={e=>{ e.target.onerror=null; e.target.src=cuisineObj?.img||FALLBACK; }}
                     />
                     <div style={{ position:"absolute", top:12, left:12, background:activeDiet.color, color:"#fff", fontSize:11, fontWeight:700, padding:"4px 10px", borderRadius:4, textTransform:"uppercase" }}>
                       {activeDiet.icon} {diet}
@@ -438,12 +412,13 @@ export default function TasteMania() {
             <span>›</span><span style={{ color:G.dark }}>{recipe.name}</span>
           </div>
           <div style={{ background:"#fff", borderRadius:16, overflow:"hidden", boxShadow:"0 4px 24px rgba(0,0,0,0.09)" }}>
-            {/* ✅ TheMealDB: exact dish photo for detail page too */}
+            {/* ✅ Fast: AI-provided specific keyword → Unsplash CDN */}
             <div style={{ position:"relative", height:320, overflow:"hidden" }}>
-              <MealImage
-                name={recipe.name}
-                fallback={cuisineObj?.img || FALLBACK}
+              <img
+                src={foodImg(recipe.imageKeyword, cuisineObj?.img || FALLBACK)}
+                alt={recipe.name}
                 style={{ width:"100%", height:"100%", objectFit:"cover" }}
+                onError={e=>{ e.target.onerror=null; e.target.src=cuisineObj?.img||FALLBACK; }}
               />
               <div style={{ position:"absolute", inset:0, background:"linear-gradient(to top,rgba(0,0,0,0.60),transparent)" }} />
               <h1 style={{ ...play, position:"absolute", bottom:24, left:28, color:"#fff", fontSize:36, fontWeight:900, textShadow:"0 2px 12px rgba(0,0,0,0.5)" }}>{recipe.name}</h1>
