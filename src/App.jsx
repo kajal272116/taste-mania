@@ -72,7 +72,7 @@ export default function TasteMania() {
   const [recipe,     setRecipe]  = useState(null);
   const [detail,     setDetail]  = useState(null);
   const [detLoading, setDL]      = useState(false);
-  const [error,      setError]   = useState("");
+  const [recipeImages, setRecipeImages] = useState({});
   const [search,     setSearch]  = useState("");
   const [suggestions,setSugg]    = useState([]);
   const [suggLoading,setSL]      = useState(false);
@@ -93,13 +93,17 @@ export default function TasteMania() {
   }, [chatMsgs]);
 
   const fetchRecipes = async (c, d) => {
-    setLoading(true); setRecipes([]); setError(""); setSearch(""); setSugg([]);
+    setLoading(true); setRecipes([]); setError(""); setSearch(""); setSugg([]); setRecipeImages({});
     try {
       const text = await callAI(
         "Return ONLY a valid JSON array. No markdown. Each item: {name, description, time, difficulty, tags:[str,str]}",
         `List exactly 6 popular ${d} ${c} recipes. JSON array only.`
       );
-      setRecipes(extractJSON(text));
+      const parsed = extractJSON(text);
+      setRecipes(parsed);
+      // Fire all image fetches in parallel immediately after recipes arrive
+      const fallback = cuisines.find(cu => cu.name === c)?.img || FALLBACK;
+      fetchAllImages(parsed, fallback);
     } catch(e) {
       setError("⚠️ " + e.message);
       setRecipes([
@@ -372,12 +376,12 @@ export default function TasteMania() {
               {recipes.map((r,i)=>(
                 <div key={i} className="lift" onClick={()=>openRecipe(r)}
                   style={{ background:"#fff", borderRadius:14, overflow:"hidden", cursor:"pointer", transition:"all .2s", boxShadow:"0 3px 14px rgba(0,0,0,0.08)" }}>
-                  {/* ✅ Fast: AI-provided specific keyword → Unsplash CDN */}
+                  {/* ✅ TheMealDB batch: all images fetched in parallel */}
                   <div style={{ height:200, overflow:"hidden", position:"relative" }}>
                     <img
-                      src={foodImg(r.imageKeyword, cuisineObj?.img || FALLBACK)}
+                      src={recipeImages[r.name] || cuisineObj?.img || FALLBACK}
                       alt={r.name}
-                      style={{ width:"100%", height:"100%", objectFit:"cover" }}
+                      style={{ width:"100%", height:"100%", objectFit:"cover", transition:"opacity 0.3s" }}
                       onError={e=>{ e.target.onerror=null; e.target.src=cuisineObj?.img||FALLBACK; }}
                     />
                     <div style={{ position:"absolute", top:12, left:12, background:activeDiet.color, color:"#fff", fontSize:11, fontWeight:700, padding:"4px 10px", borderRadius:4, textTransform:"uppercase" }}>
@@ -412,10 +416,10 @@ export default function TasteMania() {
             <span>›</span><span style={{ color:G.dark }}>{recipe.name}</span>
           </div>
           <div style={{ background:"#fff", borderRadius:16, overflow:"hidden", boxShadow:"0 4px 24px rgba(0,0,0,0.09)" }}>
-            {/* ✅ Fast: AI-provided specific keyword → Unsplash CDN */}
+            {/* ✅ TheMealDB batch image for detail page */}
             <div style={{ position:"relative", height:320, overflow:"hidden" }}>
               <img
-                src={foodImg(recipe.imageKeyword, cuisineObj?.img || FALLBACK)}
+                src={recipeImages[recipe.name] || cuisineObj?.img || FALLBACK}
                 alt={recipe.name}
                 style={{ width:"100%", height:"100%", objectFit:"cover" }}
                 onError={e=>{ e.target.onerror=null; e.target.src=cuisineObj?.img||FALLBACK; }}
