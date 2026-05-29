@@ -92,6 +92,21 @@ export default function TasteMania() {
 
   const scrollToCuisines = () => cuisinesRef.current?.scrollIntoView({ behavior:"smooth" });
 
+  // Batch-fetch all dish images simultaneously using Promise.all
+  const fetchAllImages = async (recipeList, fallback) => {
+    const results = await Promise.all(
+      recipeList.map(r =>
+        fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(r.name)}`)
+          .then(res => res.json())
+          .then(data => ({ name: r.name, url: data?.meals?.[0]?.strMealThumb || fallback }))
+          .catch(() => ({ name: r.name, url: fallback }))
+      )
+    );
+    const imgMap = {};
+    results.forEach(r => { imgMap[r.name] = r.url; });
+    setRecipeImages(imgMap);
+  };
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior:"smooth" });
   }, [chatMsgs]);
