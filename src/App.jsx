@@ -29,9 +29,12 @@ const dietTabs = [
 const G = { cream:"#fdf8f0", dark:"#1a1a1a", green:"#2d6a4f", red:"#9b2226", warm:"#c9882b", muted:"#666", border:"#e8e0d5" };
 const play = { fontFamily:"'Playfair Display',Georgia,serif" };
 
-const API_URL = typeof window !== "undefined" && window.location.hostname.includes("netlify")
-  ? "/.netlify/functions/claude"
-  : "https://api.anthropic.com/v1/messages";
+// On localhost or Claude preview → call Anthropic directly
+// On any live domain (Vercel etc) → use our secure backend function
+const host = typeof window !== "undefined" ? window.location.hostname : "";
+const API_URL = (host === "" || host === "localhost" || host.includes("claude") || host.includes("anthropic"))
+  ? "https://api.anthropic.com/v1/messages"
+  : "/api/claude";
 
 const callAI = async (system, userMsg, max_tokens=1500) => {
   const res = await fetch(API_URL, {
