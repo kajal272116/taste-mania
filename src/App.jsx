@@ -124,10 +124,11 @@ export default function TasteMania() {
   const [suggLoading, setSL]         = useState(false);
   const [chatOpen,    setChatOpen]   = useState(false);
   const [chatMsgs,    setChatMsgs]   = useState([
-    { role:"bot", text:"👋 Hi! I'm your TasteMania food assistant. Ask me about any recipe or food fact!" }
+    { role:"bot", text:"👋 Hey there! I'm your TasteMania food companion. I can help you discover recipes, share food facts, or just chat about cuisines. What's on your mind today? 🍽️" }
   ]);
   const [chatInput,   setChatInput]  = useState("");
   const [chatLoading, setCL]         = useState(false);
+  const [unclearCount,setUnclearCount] = useState(0);
 
   const cuisinesRef = useRef(null);
   const chatEndRef  = useRef(null);
@@ -240,24 +241,65 @@ export default function TasteMania() {
     const msg = chatInput.trim();
     if (!msg) return;
     setChatInput("");
-    setChatMsgs(p => [...p, { role:"user", text:msg }]);
+    const updatedMsgs = [...chatMsgs, { role:"user", text:msg }];
+    setChatMsgs(updatedMsgs);
     setCL(true);
+
+    // Build conversation history for context (last 6 messages)
+    const history = updatedMsgs.slice(-6).map(m => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: m.text
+    }));
+
     try {
-      const text = await callAI(
-        `You are TasteMania's food assistant. If user asks for a recipe, respond: {"type":"recipe","name":"<dish>","cuisine":"<cuisine or empty>","message":"<short intro>"}. Otherwise: {"type":"fact","message":"<answer>"}. JSON only.`,
-        msg, 600
-      );
+      const res = await fetch(API_URL, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          max_tokens: 800,
+          system: `You are TasteMania's warm, enthusiastic food companion — like a knowledgeable foodie friend who genuinely loves talking about food. You have a friendly, conversational personality.
+
+RULES:
+1. Always classify the user's intent as one of: "recipe", "fact", "unclear"
+2. ALWAYS end your response with a natural follow-up question or gentle nudge — never let the conversation die
+3. If intent is "recipe": share a brief intro about the dish and offer to show the recipe page, then ask something like "Want to explore more dishes from this cuisine?"
+4. If intent is "fact": share an interesting food fact in a conversational way, then follow up with a related curiosity or question
+5. If intent is "unclear": respond warmly and ask for clarification — but VARY your response each time, never repeat the same clarification question twice
+6. If the user has been unclear ${unclearCount} times already, shift strategy completely — suggest 2-3 specific things they might be looking for instead of asking open-ended questions
+7. Keep responses concise — 2-4 sentences max, then the follow-up
+8. Be warm, never robotic — use casual language and occasional food emojis
+
+Respond ONLY in this JSON format:
+{
+  "type": "recipe" | "fact" | "unclear",
+  "name": "<dish name if recipe, else null>",
+  "cuisine": "<cuisine if known, else null>",
+  "message": "<your warm, conversational response that ALWAYS ends with a follow-up question or nudge>"
+}`,
+          messages: history
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(JSON.stringify(data.error));
+      const text = data.content?.[0]?.text || "";
       const parsed = extractJSON(text);
-      if (parsed.type === "recipe") {
-        setChatMsgs(p => [...p, {
-          role:"bot", text: parsed.message,
-          action: { label:`View ${parsed.name} Recipe →`, name: parsed.name, cuisine: parsed.cuisine || null }
-        }]);
-      } else {
+
+      if (parsed.type === "unclear") {
+        setUnclearCount(c => c + 1);
         setChatMsgs(p => [...p, { role:"bot", text: parsed.message }]);
+      } else {
+        setUnclearCount(0);
+        if (parsed.type === "recipe" && parsed.name) {
+          setChatMsgs(p => [...p, {
+            role:"bot",
+            text: parsed.message,
+            action: { label:`View ${parsed.name} Recipe →`, name: parsed.name, cuisine: parsed.cuisine || null }
+          }]);
+        } else {
+          setChatMsgs(p => [...p, { role:"bot", text: parsed.message }]);
+        }
       }
     } catch {
-      setChatMsgs(p => [...p, { role:"bot", text:"Sorry, couldn't process that. Please try again!" }]);
+      setChatMsgs(p => [...p, { role:"bot", text:"Oops, my brain had a little hiccup there! 😅 But I'm back — are you hunting for a recipe, or curious about a food fact?" }]);
     }
     setCL(false);
   };
