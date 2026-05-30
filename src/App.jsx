@@ -241,43 +241,71 @@ export default function TasteMania() {
     const msg = chatInput.trim();
     if (!msg) return;
     setChatInput("");
+
+    // Handle special commands
+    if (/clear|reset|start over|new chat/i.test(msg)) {
+      setChatMsgs([{ role:"bot", text:"Sure! Fresh start 🍽️ What food adventure can I take you on today? Looking for a recipe, a fun food fact, or something else?" }]);
+      setUnclearCount(0);
+      return;
+    }
+
     const updatedMsgs = [...chatMsgs, { role:"user", text:msg }];
     setChatMsgs(updatedMsgs);
     setCL(true);
 
-    // Build conversation history for context (last 6 messages)
-    const history = updatedMsgs.slice(-6).map(m => ({
+    // Pass full conversation so AI has complete context
+    const history = updatedMsgs.map(m => ({
       role: m.role === "user" ? "user" : "assistant",
       content: m.text
     }));
+
+    // Count how many back-and-forth exchanges have happened
+    const exchangeCount = updatedMsgs.filter(m => m.role === "user").length;
 
     try {
       const res = await fetch(API_URL, {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           max_tokens: 800,
-          system: `You are TasteMania's warm, enthusiastic food companion — like a knowledgeable foodie friend who genuinely loves talking about food. You have a friendly, conversational personality.
+          system: `You are TasteMania's warm, witty food companion — like a knowledgeable foodie friend who genuinely loves talking about food.
 
-RULES:
-1. Always classify the user's intent as one of: "recipe", "fact", "unclear"
-2. ALWAYS end your response with a natural follow-up question or gentle nudge — never let the conversation die
-3. If intent is "recipe": share a brief intro about the dish and offer to show the recipe page, then ask something like "Want to explore more dishes from this cuisine?"
-4. If intent is "fact": share an interesting food fact in a conversational way, then follow up with a related curiosity or question
-5. If intent is "unclear": respond warmly and ask for clarification — but VARY your response each time, never repeat the same clarification question twice
-6. If the user has been unclear ${unclearCount} times already, shift strategy completely — suggest 2-3 specific things they might be looking for instead of asking open-ended questions
-7. Keep responses concise — 2-4 sentences max, then the follow-up
-8. Be warm, never robotic — use casual language and occasional food emojis
+You have the FULL conversation history. Use it to understand context. Even vague answers like "yes", "maybe", "that one", "the second" should be interpreted based on what was just discussed.
 
-Respond ONLY in this JSON format:
+CRITICAL DECISION RULE — COMMIT TO AN ANSWER:
+- If you have asked ${Math.max(1, exchangeCount - 2)} or more clarifying questions already, STOP asking and COMMIT to a specific recipe or fact based on the best interpretation of what the user wants.
+- If the user says "yes", "sure", "ok", "that", "the first one", etc. — treat it as confirmation of whatever option you just offered them. Don't ask again.
+- If you have enough context to suggest a specific dish, DO IT — give a recipe response immediately.
+- Only ask ONE clarifying question per response, never two.
+- After 3 exchanges on the same topic, just commit to the most likely recipe.
+
+INTENT CLASSIFICATION:
+- "recipe": user wants to cook something or find a dish. Give a specific dish name and show the recipe button.
+- "fact": user wants to learn something about food/cuisine/ingredients.
+- "unclear": genuinely cannot interpret even with full context.
+- "command": user wants to do something like clear chat, start over, etc.
+
+UNCLEAR HANDLING — VARY EVERY TIME:
+- 1st unclear: Ask a warm open question
+- 2nd unclear: Give 2-3 specific options to choose from
+- 3rd unclear: Make your best guess and commit: "I'm going to guess you might enjoy [dish] — want me to pull up that recipe?"
+- Never repeat the same phrasing twice
+
+ALWAYS end with a natural follow-up — never let the conversation die. But if you just gave a recipe link, the follow-up should be light: "Hope that's what you were looking for! Anything else I can help you discover? 😊"
+
+Current unclear count: ${unclearCount}
+Current exchange count: ${exchangeCount}
+
+Respond ONLY in this exact JSON format:
 {
-  "type": "recipe" | "fact" | "unclear",
-  "name": "<dish name if recipe, else null>",
+  "type": "recipe" | "fact" | "unclear" | "command",
+  "name": "<specific dish name if recipe, else null>",
   "cuisine": "<cuisine if known, else null>",
-  "message": "<your warm, conversational response that ALWAYS ends with a follow-up question or nudge>"
+  "message": "<warm, conversational response — interpret vague answers from context, ALWAYS end with a follow-up>"
 }`,
           messages: history
         })
       });
+
       const data = await res.json();
       if (data.error) throw new Error(JSON.stringify(data.error));
       const text = data.content?.[0]?.text || "";
@@ -292,14 +320,17 @@ Respond ONLY in this JSON format:
           setChatMsgs(p => [...p, {
             role:"bot",
             text: parsed.message,
-            action: { label:`View ${parsed.name} Recipe →`, name: parsed.name, cuisine: parsed.cuisine || null }
+            action:{ label:`View ${parsed.name} Recipe →`, name:parsed.name, cuisine:parsed.cuisine||null }
           }]);
         } else {
           setChatMsgs(p => [...p, { role:"bot", text: parsed.message }]);
         }
       }
     } catch {
-      setChatMsgs(p => [...p, { role:"bot", text:"Oops, my brain had a little hiccup there! 😅 But I'm back — are you hunting for a recipe, or curious about a food fact?" }]);
+      setChatMsgs(p => [...p, {
+        role:"bot",
+        text:"Hmm, something went sideways on my end! 😅 Let's try again — are you looking for a recipe to cook, or curious about a food fact?"
+      }]);
     }
     setCL(false);
   };
